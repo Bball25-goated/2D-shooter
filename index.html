@@ -1,194 +1,289 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>2D Shooter</title>
-  <style>
-    html, body {
-      margin: 0;
-      overflow: hidden;
-      background: black;
-    }
-    canvas {
-      display: block;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2D Shooter</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: black;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
 </head>
 <body>
-<canvas id="gameCanvas" width="800" height="600"></canvas>
-<script>
-const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
+    <canvas id="gameCanvas"></canvas>
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
 
-const keys = {};
-let mouseX = 0;
-let mouseY = 0;
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
 
-// Game variables
-let player = {
-  x: canvas.width / 2,
-  y: canvas.height / 2,
-  speed: 3,
-  width: 20,
-  height: 20,
-  health: 3,
-  weapon: 'revolver',
-  ammo: 12,
-  reloadTime: 1000,
-  reloading: false,
-  kills: {
-    revolver: 0,
-    shotgun: 0,
-    crossbow: 0,
-    grenade: 0,
-    sword: 0
-  },
-  weaponsUnlocked: ['revolver']
-};
+        // Player
+        const player = {
+            x: canvas.width / 2,
+            y: canvas.height / 2,
+            width: 40,
+            height: 40,
+            speed: 5,
+            color: "blue",
+            isShooting: false,
+            health: 100,
+            ammo: 12,
+            maxAmmo: 12,
+            level: 1,
+            kills: 0,
+            power: 1,
+            weapon: 'revolver',
+            upgradeCooldown: false
+        };
 
-const bullets = [];
-const enemies = [];
+        // Power-ups
+        const powerUps = [];
 
-// Input
-window.addEventListener('keydown', e => keys[e.key] = true);
-window.addEventListener('keyup', e => keys[e.key] = false);
-canvas.addEventListener('mousemove', e => {
-  const rect = canvas.getBoundingClientRect();
-  mouseX = e.clientX - rect.left;
-  mouseY = e.clientY - rect.top;
-});
+        // Bullets
+        const bullets = [];
 
-function shoot() {
-  if (player.reloading || player.ammo <= 0) return;
-  player.ammo--;
+        // Enemies
+        const enemies = [];
 
-  let angle;
-  if (player.weapon === 'crossbow') {
-    angle = Math.atan2(mouseY - player.y, mouseX - player.x);
-  } else {
-    let nearest = getNearestEnemy();
-    if (!nearest) return;
-    angle = Math.atan2(nearest.y - player.y, nearest.x - player.x);
-  }
+        // Bosses
+        let boss = null;
 
-  bullets.push({
-    x: player.x,
-    y: player.y,
-    angle: angle,
-    speed: 7,
-    weapon: player.weapon
-  });
+        // Enemy and Spawn rate
+        let enemySpeed = 1;
+        let enemySpawnRate = 1000;
 
-  if (player.ammo <= 0) {
-    player.reloading = true;
-    setTimeout(() => {
-      player.ammo = 12;
-      player.reloading = false;
-    }, player.reloadTime);
-  }
-}
+        // Game Loop
+        function gameLoop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-function getNearestEnemy() {
-  if (enemies.length === 0) return null;
-  return enemies.reduce((a, b) => {
-    let da = Math.hypot(a.x - player.x, a.y - player.y);
-    let db = Math.hypot(b.x - player.x, b.y - player.y);
-    return da < db ? a : b;
-  });
-}
+            updatePlayer();
+            updateBullets();
+            updateEnemies();
+            updatePowerUps();
+            checkCollisions();
+            spawnBoss();
 
-function spawnEnemy() {
-  enemies.push({
-    x: Math.random() * canvas.width,
-    y: Math.random() * canvas.height,
-    size: 20,
-    health: 1
-  });
-}
+            if (player.health > 0) {
+                requestAnimationFrame(gameLoop);
+            } else {
+                alert('Game Over! You died!');
+            }
+        }
 
-function update() {
-  // Movement
-  if (keys['w']) player.y -= player.speed;
-  if (keys['s']) player.y += player.speed;
-  if (keys['a']) player.x -= player.speed;
-  if (keys['d']) player.x += player.speed;
+        // Player Movement
+        const keys = {
+            w: false,
+            a: false,
+            s: false,
+            d: false,
+        };
 
-  if (keys[' ']) shoot();
+        window.addEventListener("keydown", (e) => {
+            if (e.key === "w") keys.w = true;
+            if (e.key === "a") keys.a = true;
+            if (e.key === "s") keys.s = true;
+            if (e.key === "d") keys.d = true;
+            if (e.key === " " && !player.isShooting) {
+                player.isShooting = true;
+                shootBullet();
+                setTimeout(() => player.isShooting = false, 200); 
+            }
+        });
 
-  // Switch weapons
-  for (let i = 1; i <= 5; i++) {
-    if (keys[i.toString()] && player.weaponsUnlocked[i - 1]) {
-      player.weapon = player.weaponsUnlocked[i - 1];
-    }
-  }
+        window.addEventListener("keyup", (e) => {
+            if (e.key === "w") keys.w = false;
+            if (e.key === "a") keys.a = false;
+            if (e.key === "s") keys.s = false;
+            if (e.key === "d") keys.d = false;
+        });
 
-  // Update bullets
-  for (let i = bullets.length - 1; i >= 0; i--) {
-    const b = bullets[i];
-    b.x += Math.cos(b.angle) * b.speed;
-    b.y += Math.sin(b.angle) * b.speed;
+        function updatePlayer() {
+            // Movement
+            if (keys.w) player.y -= player.speed;
+            if (keys.s) player.y += player.speed;
+            if (keys.a) player.x -= player.speed;
+            if (keys.d) player.x += player.speed;
 
-    // Remove off-screen bullets
-    if (b.x < 0 || b.y < 0 || b.x > canvas.width || b.y > canvas.height) {
-      bullets.splice(i, 1);
-    }
-  }
+            // Drawing Player
+            ctx.fillStyle = player.color;
+            ctx.fillRect(player.x, player.y, player.width, player.height);
 
-  // Collisions
-  for (let i = enemies.length - 1; i >= 0; i--) {
-    const e = enemies[i];
-    for (let j = bullets.length - 1; j >= 0; j--) {
-      const b = bullets[j];
-      if (Math.hypot(e.x - b.x, e.y - b.y) < e.size) {
-        enemies.splice(i, 1);
-        bullets.splice(j, 1);
-        player.kills[player.weapon]++;
-        break;
-      }
-    }
-  }
+            // Prevent going off-screen
+            if (player.x < 0) player.x = 0;
+            if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
+            if (player.y < 0) player.y = 0;
+            if (player.y + player.height > canvas.height) player.y = canvas.height - player.height;
+        }
 
-  // Enemy spawning (basic demo)
-  if (Math.random() < 0.02) spawnEnemy();
-}
+        // Shooting Mechanism
+        function shootBullet() {
+            if (player.ammo > 0) {
+                const bullet = {
+                    x: player.x + player.width / 2,
+                    y: player.y,
+                    radius: 5,
+                    color: "white",
+                    speed: 7,
+                };
+                bullets.push(bullet);
+                player.ammo--;
+            }
+        }
 
-function draw() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+        function updateBullets() {
+            for (let i = 0; i < bullets.length; i++) {
+                const bullet = bullets[i];
+                bullet.y -= bullet.speed;
 
-  // Player
-  ctx.fillStyle = 'white';
-  ctx.fillRect(player.x - player.width / 2, player.y - player.height / 2, player.width, player.height);
+                if (bullet.y < 0) {
+                    bullets.splice(i, 1);
+                    i--;
+                } else {
+                    ctx.beginPath();
+                    ctx.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
+                    ctx.fillStyle = bullet.color;
+                    ctx.fill();
+                }
+            }
+        }
 
-  // Bullets
-  ctx.fillStyle = 'yellow';
-  for (const b of bullets) {
-    ctx.beginPath();
-    ctx.arc(b.x, b.y, 3, 0, Math.PI * 2);
-    ctx.fill();
-  }
+        // Enemies
+        function createEnemy() {
+            const enemy = {
+                x: Math.random() * canvas.width,
+                y: -20,
+                width: 30,
+                height: 30,
+                color: "red",
+                speed: enemySpeed,
+                type: "normal", // Normal enemies initially
+            };
+            enemies.push(enemy);
+        }
 
-  // Enemies
-  ctx.fillStyle = 'red';
-  for (const e of enemies) {
-    ctx.beginPath();
-    ctx.arc(e.x, e.y, e.size, 0, Math.PI * 2);
-    ctx.fill();
-  }
+        function updateEnemies() {
+            for (let i = 0; i < enemies.length; i++) {
+                const enemy = enemies[i];
+                enemy.y += enemy.speed;
 
-  // HUD
-  ctx.fillStyle = 'white';
-  ctx.fillText(`Health: ${player.health}`, 10, 20);
-  ctx.fillText(`Ammo: ${player.ammo}${player.reloading ? ' (reloading)' : ''}`, 10, 40);
-  ctx.fillText(`Weapon: ${player.weapon}`, 10, 60);
-  ctx.fillText(`Kills (${player.weapon}): ${player.kills[player.weapon]}`, 10, 80);
-}
+                // Remove enemy if it goes off-screen
+                if (enemy.y > canvas.height) {
+                    enemies.splice(i, 1);
+                    i--;
+                } else {
+                    ctx.fillStyle = enemy.color;
+                    ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
+                }
+            }
+        }
 
-function gameLoop() {
-  update();
-  draw();
-  requestAnimationFrame(gameLoop);
-}
+        // Power-ups
+        function createPowerUp(x, y, type) {
+            const powerUp = {
+                x,
+                y,
+                width: 20,
+                height: 20,
+                type,
+            };
+            powerUps.push(powerUp);
+        }
 
-gameLoop();
-</script>
+        function updatePowerUps() {
+            for (let i = 0; i < powerUps.length; i++) {
+                const powerUp = powerUps[i];
+                ctx.fillStyle = "green";
+                ctx.fillRect(powerUp.x, powerUp.y, powerUp.width, powerUp.height);
+
+                // Check for collision with player
+                if (
+                    player.x < powerUp.x + powerUp.width &&
+                    player.x + player.width > powerUp.x &&
+                    player.y < powerUp.y + powerUp.height &&
+                    player.y + player.height > powerUp.y
+                ) {
+                    handlePowerUp(powerUp);
+                    powerUps.splice(i, 1);
+                    i--;
+                }
+            }
+        }
+
+        function handlePowerUp(powerUp) {
+            if (powerUp.type === "health") {
+                player.health += 10;
+            } else if (powerUp.type === "ammo") {
+                player.ammo = player.maxAmmo;
+            } else if (powerUp.type === "level") {
+                player.level++;
+                player.speed += 1;
+                player.kills = 0;
+            }
+        }
+
+        // Enemies Collisions
+        function checkCollisions() {
+            for (let i = 0; i < bullets.length; i++) {
+                const bullet = bullets[i];
+
+                for (let j = 0; j < enemies.length; j++) {
+                    const enemy = enemies[j];
+
+                    if (
+                        bullet.x > enemy.x &&
+                        bullet.x < enemy.x + enemy.width &&
+                        bullet.y > enemy.y &&
+                        bullet.y < enemy.y + enemy.height
+                    ) {
+                        bullets.splice(i, 1);
+                        enemies.splice(j, 1);
+                        player.kills++;
+                        i--;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Spawn Bosses
+        function spawnBoss() {
+            if (player.kills >= 500 && !boss) {
+                boss = {
+                    x: canvas.width / 2 - 50,
+                    y: -100,
+                    width: 100,
+                    height: 100,
+                    speed: 1,
+                    color: "purple",
+                    health: 200,
+                };
+            }
+
+            if (boss) {
+                boss.y += boss.speed;
+                ctx.fillStyle = boss.color;
+                ctx.fillRect(boss.x, boss.y, boss.width, boss.height);
+
+                if (boss.y > canvas.height) {
+                    boss = null;
+                    player.kills = 0; // Reset kills after boss fight
+                    player.health = 100;
+                }
+            }
+        }
+
+        // Enemy spawning rate
+        setInterval(createEnemy, enemySpawnRate);
+
+        // Start the game loop
+        gameLoop();
+    </script>
 </body>
 </html>
