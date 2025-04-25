@@ -27,7 +27,7 @@
         // Player
         const player = {
             x: canvas.width / 2,
-            y: canvas.height / 2,
+            y: canvas.height - 60,
             width: 40,
             height: 40,
             speed: 5,
@@ -40,7 +40,9 @@
             kills: 0,
             power: 1,
             weapon: 'revolver',
-            upgradeCooldown: false
+            reloadTime: 1000, // 1 second reload time
+            reloadCooldown: false,
+            reloadStartTime: 0
         };
 
         // Power-ups
@@ -90,7 +92,7 @@
             if (e.key === "a") keys.a = true;
             if (e.key === "s") keys.s = true;
             if (e.key === "d") keys.d = true;
-            if (e.key === " " && !player.isShooting) {
+            if (e.key === " " && !player.isShooting && !player.reloadCooldown) {
                 player.isShooting = true;
                 shootBullet();
                 setTimeout(() => player.isShooting = false, 200); 
@@ -122,32 +124,87 @@
             if (player.y + player.height > canvas.height) player.y = canvas.height - player.height;
         }
 
-        // Shooting Mechanism
+        // Shooting Mechanism (Bullets now move toward enemies)
         function shootBullet() {
-            if (player.ammo > 0) {
+            if (player.ammo > 0 && !player.reloadCooldown) {
                 const bullet = {
-                    x: player.x + player.width / 2,
+                    x: player.x + player.width / 2 - 5,
                     y: player.y,
-                    radius: 5,
+                    width: 10,
+                    height: 5,
                     color: "white",
-                    speed: 7,
+                    speed: 5,
+                    target: null, // will store closest enemy
                 };
+
+                // Find the closest enemy to target
+                let closestEnemy = null;
+                let minDistance = Infinity;
+
+                for (let i = 0; i < enemies.length; i++) {
+                    const enemy = enemies[i];
+                    const dist = Math.sqrt(Math.pow(bullet.x - enemy.x, 2) + Math.pow(bullet.y - enemy.y, 2));
+                    if (dist < minDistance) {
+                        minDistance = dist;
+                        closestEnemy = enemy;
+                    }
+                }
+
+                bullet.target = closestEnemy;
                 bullets.push(bullet);
                 player.ammo--;
+                if (player.ammo === 0) {
+                    reloadWeapon();
+                }
             }
+        }
+
+        function reloadWeapon() {
+            player.reloadCooldown = true;
+            player.reloadStartTime = Date.now();
+            setTimeout(() => {
+                player.ammo = player.maxAmmo;
+                player.reloadCooldown = false;
+            }, player.reloadTime);
         }
 
         function updateBullets() {
             for (let i = 0; i < bullets.length; i++) {
                 const bullet = bullets[i];
-                bullet.y -= bullet.speed;
 
-                if (bullet.y < 0) {
-                    bullets.splice(i, 1);
+                if (bullet.target) {
+                    // Move towards the target
+                    const dx = bullet.target.x + bullet.target.width / 2 - bullet.x;
+                    const dy = bullet.target.y + bullet.target.height / 2 - bullet.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    const velocityX = (dx / distance) * bullet.speed;
+                    const velocityY = (dy / distance) * bullet.speed;
+
+                    bullet.x += velocityX;
+                    bullet.y += velocityY;
+
+                    // Check if bullet hits the target
+                    if (
+                        bullet.x < bullet.target.x + bullet.target.width &&
+                        bullet.x + bullet.width > bullet.target.x &&
+                        bullet.y < bullet.target.y + bullet.target.height &&
+                        bullet.y + bullet.height > bullet.target.y
+                    ) {
+                        // Bullet hit target, remove it and the enemy
+                        bullets.splice(i, 1);
+                        enemies.splice(enemies.indexOf(bullet.target), 1);
+                        player.kills++;
+                        i--;
+                        break;
+                    }
+                }
+
+                if (bullet.y < 0 || bullet.x < 0 || bullet.x > canvas.width || bullet.y > canvas.height) {
+                    bullets.splice(i, 1); // Remove bullet if it goes off-screen
                     i--;
                 } else {
                     ctx.beginPath();
-                    ctx.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
+                    ctx.arc(bullet.x, bullet.y, 5, 0, Math.PI * 2);
                     ctx.fillStyle = bullet.color;
                     ctx.fill();
                 }
@@ -247,6 +304,26 @@
                         player.kills++;
                         i--;
                         break;
+                    }
+                }
+            }
+
+            // Player vs Enemies collision
+            for (let i = 0; i < enemies.length; i++) {
+                const enemy = enemies[i];
+
+                if (
+                    player.x < enemy.x + enemy.width &&
+                    player.x + player.width > enemy.x &&
+                    player.y < enemy.y + enemy.height &&
+                    player.y + player.height > enemy.y
+                ) {
+                    player.health -= 10; // Reduce health if collision occurs
+                    enemies.splice(i, 1); // Remove enemy
+                    i--;
+                    if (player.health <= 0) {
+                        alert('Game Over!');
+                        return;
                     }
                 }
             }
